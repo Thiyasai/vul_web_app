@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Gallery</title>
+</head>
+<body>
+    <h2>Image Gallery</h2>
+    <a href="/profile">Back to Profile</a> |
+    <a href="/logout">Logout</a>
+    <hr>
+
+    {% if files %}
+        {% for file in files %}
+            <div>
+                <img src="{{ url_for('static', filename='uploads/' + file[0]) }}" alt="{{ file[0] }}" width="200px">
+                {% if session.get('is_admin') %}
+                    <p><strong>User ID:</strong> {{ file[1] }}</p>
+                {% endif %}
+            </div>
+        {% endfor %}
+    {% else %}
+        <p>No images found.</p>
+    {% endif %}
+</body>
+</html>
+

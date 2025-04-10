@@ -10,16 +10,19 @@ UPLOAD_FOLDER = 'static/uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
+# Ensure upload folder exists
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
+# DB connection helper
 def get_db_connection():
     conn = sqlite3.connect('database.db')
     conn.row_factory = sqlite3.Row
     return conn
+
+# Allowed file types
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 @app.route('/')
 def index():
@@ -46,12 +49,11 @@ def login():
         password = request.form['password']
 
         conn = get_db_connection()
-        user = conn.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, password)).fetchone()
+        user = conn.execute("SELECT id FROM users WHERE username = ? AND password = ?", (username, password)).fetchone()
         conn.close()
 
         if user:
             session['user_id'] = user['id']
-            session['is_admin'] = True if user['username'] == 'admin' else False
             return redirect('/profile')
     return render_template('login.html')
 
@@ -71,6 +73,7 @@ def profile():
     conn.close()
     return render_template('profile.html', user=user, posts=posts)
 
+
 @app.route('/upload', methods=['GET', 'POST'])
 def upload():
     if 'user_id' not in session:
@@ -83,28 +86,35 @@ def upload():
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             file.save(filepath)
 
-            conn = get_db_connection()
+            conn = sqlite3.connect('database.db')
             conn.execute('INSERT INTO uploads (user_id, filename) VALUES (?, ?)', (session['user_id'], filename))
             conn.commit()
             conn.close()
 
-            return redirect(url_for('gallery'))
+            # ✅ Redirect back to profile after upload
+            return redirect(url_for('profile'))
 
     return render_template('upload.html')
+
 
 @app.route('/gallery')
 def gallery():
     if 'user_id' not in session:
         return redirect(url_for('login'))
 
-    conn = get_db_connection()
-    if session.get('is_admin'):
-        files = conn.execute('SELECT filename, user_id FROM uploads').fetchall()
-    else:
-        files = conn.execute('SELECT filename FROM uploads WHERE user_id = ?', (session['user_id'],)).fetchall()
-    conn.close()
+    conn = sqlite3.connect('database.db')
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
 
-    return render_template('gallery.html', files=files)
+    if session.get('is_admin') == 1:
+        c.execute("SELECT filename FROM uploads")  # All uploads
+    else:
+        c.execute("SELECT filename FROM uploads WHERE user_id = ?", (session['user_id'],))
+
+    files = c.fetchall()
+    conn.close()
+    return render_template('gallery.html', images=files)
+
 
 @app.route('/change_password', methods=['GET', 'POST'])
 def change_password():
@@ -146,26 +156,23 @@ def create_post():
 
 @app.route('/posts')
 def posts():
-    conn = get_db_connection()
-    if session.get('is_admin'):
-        posts = conn.execute('SELECT posts.content, users.username FROM posts JOIN users ON posts.user_id = users.id').fetchall()
+    conn = sqlite3.connect('database.db')
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+
+    if session.get('is_admin') == 1:
+        c.execute('SELECT posts.content, users.username FROM posts JOIN users ON posts.user_id = users.id')
     else:
-        posts = conn.execute('SELECT content, username FROM posts JOIN users ON posts.user_id = users.id WHERE users.id = ?', (session['user_id'],)).fetchall()
+        c.execute('SELECT content, username FROM posts JOIN users ON posts.user_id = users.id WHERE users.id = ?', (session['user_id'],))
+
+    posts = c.fetchall()
     conn.close()
     return render_template('posts.html', posts=posts)
 
 
 
-@app.route('/view_posts')
-def view_posts():
-    if 'user_id' not in session:
-        return redirect('/login')
 
-    conn = get_db_connection()
-    posts = conn.execute('SELECT posts.content, users.username FROM posts JOIN users ON posts.user_id = users.id').fetchall()
-    conn.close()
-    return render_template('view_posts.html', posts=posts)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0', port=5000)
 
